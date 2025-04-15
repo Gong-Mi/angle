@@ -16,7 +16,7 @@ jobs:
 
     env:
       DEPOT_TOOLS_PATH: depot_tools
-      ANDROID_NDK_VERSION: r26d # 仍然保留 NDK 版本，虽然可能不再直接使用下载
+      ANDROID_NDK_VERSION: r26d # NDK 版本号，供参考, gclient sync will manage the actual version
       TARGET_ANDROID_API_LEVEL: 34
       DEPOT_TOOLS_WINTOOLCHAIN: 0
 
@@ -26,7 +26,7 @@ jobs:
         with:
           repository: chromium/chromium
           path: chromium
-          fetch-depth: 1 # 保持浅层检出
+          fetch-depth: 1 # 保持浅层检出，加速 workflow
 
       - name: Install depot_tools
         run: |
@@ -39,23 +39,24 @@ jobs:
           echo "PATH from ENV file: $PATH"
           which gclient
 
-      # - name: Install Android NDK  - **!! 去掉显式下载 NDK 的步骤 !!**
-      #   run: |
-      #     # ... (之前下载 NDK 的代码全部移除) ...
-
       - name: Configure gclient
         working-directory: chromium
         run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
-      - name: Sync Chromium Dependencies (This will take a LONG time, but hopefully includes NDK/SDK)
+      - name: Sync Chromium Dependencies (This will take a LONG time, but includes NDK/SDK)
         working-directory: chromium
         run: gclient sync -j$(nproc) # 期望 gclient sync 能处理 NDK/SDK 依赖
 
       - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: chromium/third_party/angle
         run: |
-          # 尝试让 GN 自动检测 NDK 路径，或者使用 Chromium 源码树中可能包含的 NDK/SDK
-          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false' #  !! 注意: 这里去掉了 android_ndk_root 参数 !!  让 GN 尝试自动查找
+          # GN 配置，target_os 和 target_cpu 指定目标平台，android_ndk_api_level 指定 API Level
+          # is_debug=false 构建 Release 版本， angle_build_* 控制构建的 ANGLE 后端
+          # 移除 android_ndk_root 参数，让 GN 自动从 Chromium 源码树中查找 NDK
+          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
+          # is_debug=false: Building a Release build. Change to is_debug=true for Debug build.
+          # angle_build_*: Configures ANGLE backends. Current settings for common Android GLES/Vulkan usage.
+          # Customize these flags to enable/disable specific backends as needed.
 
       - name: Build ANGLE (Ninja) - Android ARM64
         working-directory: chromium/third_party/angle
@@ -65,4 +66,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: angle-android-arm64-release-build-gclient-ndk
-          path: chromium/third_party/angle/out/Android_ARM64/libangle.so # 上传 libangle.so 库文件
+          path: chromium/third_party/angle/out/Android_ARM64/libangle.so # 上传构建产物 libangle.so
