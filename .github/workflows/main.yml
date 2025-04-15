@@ -36,7 +36,7 @@ jobs:
         run: ninja -C out/Debug angle_tests -j$(nproc) # 使用所有可用的处理器核心加速编译
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: angle-linux-x64-debug-build
           path: chromium/third_party/angle/out/Debug # 上传整个 out/Debug 目录，包含库文件和可执行文件
