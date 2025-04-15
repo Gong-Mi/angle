@@ -1,81 +1,42 @@
-name: Build ANGLE for Android ARM64
+name: Build ANGLE - Linux x64
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ "main" ]
 
 jobs:
-  build_android_arm64:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+      - name: Checkout Chromium Source Code
+        uses: actions/checkout@v3
+        with:
+          repository: chromium/chromium # 使用 chromium/chromium 仓库，ANGLE 在其中
+          path: chromium # 将代码检出到 chromium 目录
 
-    - name: Set up depot_tools
-      run: |
-        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        echo "$(pwd)/depot_tools" >> $GITHUB_PATH
-        echo "DEPOT_TOOLS_METRICS=0" >> $GITHUB_ENV
+      - name: Install depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          export PATH="$PATH:$(pwd)/depot_tools"
 
-    - name: Configure gclient
-      run: |
-        gclient config --spec 'solutions = [
-          {
-            "url": "https://chromium.googlesource.com/angle/angle.git",
-            "managed": False,
-            "name": "angle",
-            "deps_file": "DEPS",
-            "custom_deps": {},
-          },
-        ]'
+      - name: Sync Chromium Dependencies
+        working-directory: chromium
+        run: gclient sync
 
-    - name: Sync dependencies (gclient sync)
-      run: gclient sync --nohooks --no-history --with_branch_heads --with_tags > gclient_sync.log 2>&1
+      - name: Configure ANGLE Build (GN)
+        working-directory: chromium/third_party/angle
+        run: |
+          gn gen out/Debug --args='target_os="linux" target_cpu="x64" is_debug=true angle_build_gl=true angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
 
-    - name: Set up Android SDK and NDK # 添加设置 Android SDK/NDK 的步骤
-      uses: android-actions/setup-android-sdk@latest # 使用 actions/setup-android-sdk action
-      with:
-        ndk-version: 'latest' # 使用最新的 NDK 版本
+      - name: Build ANGLE (Ninja)
+        working-directory: chromium/third_party/angle
+        run: ninja -C out/Debug angle_tests -j$(nproc) # 使用所有可用的处理器核心加速编译
 
-    - name: Generate build files (gn gen for Android ARM64)
-      run: |
-        gn gen out/Android_arm64_Release --args='
-          target_os="android"
-          target_cpu="arm64"
-          is_debug=false
-          is_clang=true
-          use_custom_libcxx=true
-          ndk_path="${ANDROID_NDK_HOME}" # 设置 NDK 路径，使用环境变量
-          # --- ANGLE Specific Features ---
-          angle_enable_vulkan=true
-          angle_enable_gl=true
-          # --- Other Common Flags ---
-          dcheck_always_on=false
-          is_component_build=false
-        ' > gn_gen.log 2>&1
-
-    - name: Build ANGLE (ninja)
-      run: ninja -C out/Android_arm64_Release > ninja_build.log 2>&1
-
-    - name: Upload ANGLE Android ARM64 libraries
-      uses: actions/upload-artifact@v4
-      with:
-        name: angle-android-arm64-release-libs
-        path: |
-          out/Android_arm64_Release/libEGL.so
-          out/Android_arm64_Release/libGLESv2.so
-          out/Android_arm64_Release/libGLESv1_CM.so
-        if-no-files-found: error
-
-    - name: Upload Build Logs
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: |
-          gclient_sync.log
-          gn_gen.log
-          ninja_build.log
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: angle-linux-x64-debug-build
+          path: chromium/third_party/angle/out/Debug # 上传整个 out/Debug 目录，包含库文件和可执行文件
