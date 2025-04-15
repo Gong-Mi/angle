@@ -1,0 +1,64 @@
+name: Build ANGLE for Linux ARM64
+
+# 控制 workflow 何时运行
+on:
+  push:
+    branches: [ main ] # 当 main 分支有推送时运行
+  pull_request:
+    branches: [ main ] # 当有针对 main 分支的 PR 时运行
+  workflow_dispatch:    # 允许手动从 Actions 页面触发运行
+
+jobs:
+  build_linux_arm64:
+    runs-on: ubuntu-latest # 使用 GitHub 提供的最新版 Ubuntu 虚拟机
+
+    steps:
+    # 步骤 1: 检出你的 ANGLE 代码仓库
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    # 步骤 2: 设置 depot_tools (gclient 依赖它)
+    - name: Set up depot_tools
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "$(pwd)/depot_tools" >> $GITHUB_PATH
+        # 设置环境变量，防止 gclient 尝试访问受保护的配置 (在 CI 环境中需要)
+        echo "DEPOT_TOOLS_METRICS=0" >> $GITHUB_ENV
+
+    # 步骤 3: 同步依赖 (包括 Clang 工具链)
+    # 注意：这一步会下载很多东西，可能需要一些时间
+    - name: Sync dependencies (gclient sync)
+      run: gclient sync --nohooks --no-history --with_branch_heads --with_tags
+
+    # 步骤 4: 生成 Ninja 构建文件 (配置构建)
+    # **关键：** 在这里设置正确的 gn args
+    - name: Generate build files (gn gen)
+      run: |
+        gn gen out/Linux_arm64 --args='
+          target_os="linux"
+          target_cpu="arm64"
+          is_debug=false 
+          is_clang=true
+          use_custom_libcxx=true
+          angle_enable_vulkan=true # 根据需要启用/禁用特性
+          # angle_enable_gl=false 
+          # angle_enable_gles1=false
+          # dcheck_always_on=false # Release 版本通常关闭 dcheck
+          # ... 其他你需要的 ANGLE 构建参数 ...
+        '
+
+    # 步骤 5: 编译 ANGLE (ninja)
+    - name: Build ANGLE (ninja)
+      run: ninja -C out/Linux_arm64
+
+    # 步骤 6 (可选): 上传构建产物 (库文件)
+    - name: Upload ANGLE libraries
+      uses: actions/upload-artifact@v4
+      with:
+        name: angle-linux-arm64-libs
+        path: |
+          out/Linux_arm64/*.so
+          out/Linux_arm64/*.a
+          # out/Linux_arm64/angle_end2end_tests # 如果需要测试程序
+          # ... 其他你需要的文件 ...
+        if-no-files-found: error # 如果没找到文件则报错
