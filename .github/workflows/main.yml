@@ -12,7 +12,7 @@ jobs:
 
     env:
       DEPOT_TOOLS_PATH: depot_tools
-      ANDROID_NDK_VERSION: r25c # 可以根据需要更改 NDK 版本
+      ANDROID_NDK_VERSION: r35c # 可以根据需要更改 NDK 版本
 
     steps:
       - name: Checkout Chromium Source Code
@@ -20,7 +20,7 @@ jobs:
         with:
           repository: chromium/chromium
           path: chromium
-          fetch-depth: 1
+          fetch-depth: 068885c2c5fda617e634bb73a107a0285af470ff
 
       - name: Install depot_tools
         run: |
