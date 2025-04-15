@@ -1,4 +1,4 @@
-name: Build ANGLE - Linux x64 (Environment Files)
+name: Build ANGLE - Linux x64 (Environment Files + gclient config)
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DEPOT_TOOLS_PATH: depot_tools # 定义 depot_tools 目录的变量 (虽然这里定义了，但实际上会被 Environment Files 覆盖，可以删除这个 env 定义)
+      DEPOT_TOOLS_PATH: depot_tools
 
     steps:
       - name: Checkout Chromium Source Code
@@ -23,13 +23,17 @@ jobs:
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV # 设置 DEPOT_TOOLS 环境变量 in $GITHUB_ENV
-          echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV # 将 depot_tools 加入 PATH in $GITHUB_ENV (为了简化)
+          echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
+          echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
 
       - name: Verify depot_tools in PATH
         run: |
-          echo "PATH from ENV file: $PATH" # 检查 PATH 环境变量
-          which gclient # 验证 gclient 是否在 PATH 中
+          echo "PATH from ENV file: $PATH"
+          which gclient
+
+      - name: Configure gclient
+        working-directory: chromium
+        run: gclient config https://chromium.googlesource.com/chromium/chromium.git # 配置 gclient
 
       - name: Sync Chromium Dependencies
         working-directory: chromium
