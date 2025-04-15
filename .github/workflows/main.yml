@@ -1,4 +1,4 @@
-name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK)
+name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK) - 逐步验证
 
 on:
   push:
@@ -28,11 +28,24 @@ jobs:
           path: chromium
           fetch-depth: 1 # 保持浅层检出，加速 workflow
 
+      - name: Verify Checkout - Chromium Source Code
+        working-directory: chromium
+        run: |
+          pwd
+          ls -al # 列出当前目录内容，确认 Chromium 代码已检出
+
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
           echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
+
+      - name: Verify Install - depot_tools
+        run: |
+          pwd
+          ls -al depot_tools # 列出 depot_tools 目录内容
+          echo "DEPOT_TOOLS env var: $DEPOT_TOOLS"
+          echo "PATH env var: $PATH"
 
       - name: Verify depot_tools in PATH
         run: |
@@ -43,9 +56,17 @@ jobs:
         working-directory: chromium
         run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
+      - name: Verify Configure - gclient
+        working-directory: chromium
+        run: |
+          ls -al # 检查 .gclient 文件是否存在
+          cat .gclient # 查看 .gclient 文件内容
+
       - name: Sync Chromium Dependencies (This will take a LONG time, but includes NDK/SDK)
         working-directory: chromium
-        run: gclient sync -j$(nproc) # 期望 gclient sync 能处理 NDK/SDK 依赖
+        run: |
+          echo "Starting gclient sync..." # 明确输出开始同步
+          gclient sync -j$(nproc) # 期望 gclient sync 能处理 NDK/SDK 依赖
 
       - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: chromium/third_party/angle
