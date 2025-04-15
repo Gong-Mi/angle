@@ -15,7 +15,7 @@ jobs:
     #   actions: write
 
     env:
-      ANDROID_NDK_VERSION: r26d
+      ANDROID_NDK_VERSION: r25d
       TARGET_ANDROID_API_LEVEL: 34
       DEPOT_TOOLS_WINTOOLCHAIN: 0
 
