@@ -34,6 +34,9 @@ jobs:
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
           echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
+          # IMPORTANT: Activate depot_tools environment.
+          source depot_tools/bootstrap_python3
+          export PATH="$PATH:$DEPOT_TOOLS"
 
       - name: Verify Install - depot_tools
         run: |
@@ -64,13 +67,6 @@ jobs:
           cat .gclient
           echo "gclient configuration verified."
 
-      - name: Cache ANGLE Source Code (gclient sync)
-        id: cache-angle-source
-        uses: actions/cache@v4
-        with:
-          path: angle
-          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient') }}
-
       - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
         working-directory: angle
         run: |
@@ -79,6 +75,13 @@ jobs:
           gclient sync -j$(nproc)
           date
           echo "gclient sync completed."
+
+      - name: Cache ANGLE Source Code (gclient sync)
+        id: cache-angle-source
+        uses: actions/cache@v4
+        with:
+          path: angle
+          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient') }}
 
       - name: Install Build Dependencies (Using install-build-deps.py)
         working-directory: angle
