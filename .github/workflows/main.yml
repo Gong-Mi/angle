@@ -1,4 +1,4 @@
-name: Build ANGLE - Android ARM64 (Targeting Android 14)
+name: 构建 ANGLE - Android ARM64 (目标 Android 14)
 
 on:
   push:
@@ -9,100 +9,99 @@ on:
 jobs:
   build_angle_android_arm64_api34:
     runs-on: ubuntu-latest
-    # Add permissions for actions/upload-artifact if your repo requires it
+    # 如果你的仓库需要，添加 actions/upload-artifact 的权限
     # permissions:
     #   contents: read
     #   actions: write
 
     env:
-      ANDROID_NDK_VERSION: r25c
+      ANDROID_NDK_VERSION: r26d
       TARGET_ANDROID_API_LEVEL: 34
       DEPOT_TOOLS_WINTOOLCHAIN: 0
 
     steps:
-      # 1. Install depot_tools (Needed for gclient)
-      - name: Install depot_tools
+      # 1. 安装 depot_tools (gclient 需要)
+      - name: 安装 depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git ${{ github.workspace }}/depot_tools
           echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
           echo "DEPOT_TOOLS_PATH=${{ github.workspace }}/depot_tools" >> $GITHUB_ENV
 
-      # 2. Verify depot_tools installation
-      - name: Verify depot_tools
+      # 2. 验证 depot_tools 安装
+      - name: 验证 depot_tools
         run: which gclient
 
-      # 3. Install Android NDK
-      - name: Install Android NDK ${{ env.ANDROID_NDK_VERSION }}
+      # 3. 安装 Android NDK (使用 curl 并增加重试次数和延迟)
+      - name: 安装 Android NDK ${{ env.ANDROID_NDK_VERSION }} (curl with retries)
         run: |
-          sudo apt-get update && sudo apt-get install -y wget unzip python3 --no-install-recommends
-          NDK_FILENAME=android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux-x86_64.zip
-          NDK_DOWNLOAD_URL=https://dl.google.com/android/repository/${NDK_FILENAME}
-          NDK_EXTRACT_DIR=${{ github.workspace }}/android-ndk
-          NDK_PATH_VERSIONED=${NDK_EXTRACT_DIR}/android-ndk-${{ env.ANDROID_NDK_VERSION }}
+          sudo apt-get update && sudo apt-get install -y wget unzip python3 curl --no-install-recommends # 安装 curl
+          NDK_VERSION="r26d" # 现在使用环境变量，假设硬编码测试表明不是变量问题
+          NDK_FILENAME="android-ndk-${NDK_VERSION}-linux-x86_64.zip"
+          NDK_DOWNLOAD_URL="https://dl.google.com/android/repository/${NDK_FILENAME}"
+          NDK_EXTRACT_DIR="${{ github.workspace }}/android-ndk"
+          NDK_PATH_VERSIONED=${NDK_EXTRACT_DIR}/android-ndk-${NDK_VERSION}
 
           echo "Downloading NDK from ${NDK_DOWNLOAD_URL}..."
 
-          RETRY_COUNT=3
+          RETRY_COUNT=5 # 增加重试次数
+          RETRY_DELAY=10 # 增加延迟 (秒)
+
           for i in $(seq 1 $RETRY_COUNT); do
-            echo "Attempt $i: Downloading NDK..."
-            wget --quiet ${NDK_DOWNLOAD_URL} -O ${NDK_FILENAME}
+            echo "Attempt $i: Downloading NDK using curl..."
+            curl -f -s -o ${NDK_FILENAME} ${NDK_DOWNLOAD_URL} # 使用 curl, -f 表示服务器错误时失败, -s 表示静默模式
             if [ $? -eq 0 ]; then
-              echo "NDK Downloaded successfully on attempt $i."
-              break # Exit loop if download is successful
+              echo "NDK Downloaded successfully on attempt $i using curl."
+              break
             else
-              echo "Download failed on attempt $i. Retrying in 5 seconds..."
-              sleep 5
+              echo "Download failed on attempt $i using curl. Retrying in ${RETRY_DELAY} seconds..."
+              sleep ${RETRY_DELAY}
             fi
             if [ $i -eq $RETRY_COUNT ]; then
-              echo "Download failed after $RETRY_COUNT attempts. Exiting."
-              exit 1 # Fail the step after max retries
+              echo "Download failed after $RETRY_COUNT attempts using curl. Exiting."
+              exit 1
             fi
           done
 
           echo "Extracting NDK to ${NDK_EXTRACT_DIR}..."
           unzip -q ${NDK_FILENAME} -d ${NDK_EXTRACT_DIR}
-          rm ${NDK_FILENAME} # Clean up the zip file
+          rm ${NDK_FILENAME}
 
-          # Set ANDROID_NDK_ROOT environment variable for build scripts
+          # 设置 ANDROID_NDK_ROOT 环境变量供构建脚本使用
           echo "ANDROID_NDK_ROOT=${NDK_PATH_VERSIONED}" >> $GITHUB_ENV
           echo "ANDROID_NDK_ROOT set to ${NDK_PATH_VERSIONED}"
-          # Verify NDK extraction
+          # 验证 NDK 解压
           ls -l ${NDK_PATH_VERSIONED}
 
-      # 4. Checkout ANGLE Source Code using gclient
-      - name: Checkout ANGLE Source Code
+      # 4. 检出 ANGLE 源代码
+      - name: 检出 ANGLE 源代码
         run: |
           mkdir angle_build_dir
           cd angle_build_dir
           gclient config --unmanaged https://chromium.googlesource.com/angle/angle.git
-          # Fetch ANGLE source and its dependencies
-          # Using --no-history can speed things up if full history isn't needed
           gclient sync --no-history -j$(nproc)
 
-      # 5. Configure ANGLE Build (GN) - Android ARM64 API 34
-      - name: Configure ANGLE Build (GN) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
+      # 5. 配置 ANGLE 构建 (GN) - Android ARM64 API 34
+      - name: 配置 ANGLE 构建 (GN) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         working-directory: angle_build_dir/angle
         run: |
           echo "Using ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}"
           echo "Targeting Android API Level: ${{ env.TARGET_ANDROID_API_LEVEL }}"
-          # Add android_ndk_api_level to gn args - Directly use environment variable to avoid trailing spaces
-          # Explicitly request building with Android SDK: build_with_android_sdk=true
           gn gen out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }} --args="target_os=\"android\" target_cpu=\"arm64\" android_ndk_root=\"${ANDROID_NDK_ROOT}\" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false is_component_build=false angle_enable_essl=true angle_enable_gl=false angle_enable_gl_desktop=false angle_enable_gles1=false angle_enable_vulkan=true angle_enable_d3d9=false angle_enable_d3d11=false angle_enable_metal=false angle_build_tests=false use_goma=false is_clang=true use_custom_libcxx=false build_with_android_sdk=true"
 
-      # 6. Build ANGLE (Ninja) - Android ARM64
-      - name: Build ANGLE (Ninja) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
+      # 6. 构建 ANGLE (Ninja) - Android ARM64
+      - name: 构建 ANGLE (Ninja) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         working-directory: angle_build_dir/angle
         run: |
           ninja -C out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }} angle_shared_library -j$(nproc)
 
-      # 7. Verify Build Output
-      - name: Verify Build Output
+      # 7. 验证构建输出
+      - name: 验证构建输出
         run: ls -l angle_build_dir/angle/out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }}/*angle*.*so*
 
-      # 8. Upload Build Artifacts - Android ARM64
-      - name: Upload Build Artifacts - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
+      # 8. 上传构建产物 - Android ARM64
+      - name: 上传构建产物 - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         uses: actions/upload-artifact@v4
         with:
           name: angle-android-arm64-api${{ env.TARGET_ANDROID_API_LEVEL }}-release-build
           path: angle_build_dir/angle/out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }}/libangle.so
-          if-no-files-found: error # Fail the workflow if the library wasn't built
+          if-no-files-found: error
