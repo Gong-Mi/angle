@@ -67,21 +67,22 @@ jobs:
           cat .gclient
           echo "gclient configuration verified."
 
+      - name: Cache ANGLE Source Code (gclient sync)
+        id: cache-angle-source
+        uses: actions/cache@v4
+        with:
+          path: angle
+          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient', 'angle/DEPS') }}
+
       - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
         working-directory: angle
+        if: steps.cache-angle-source.outputs.cache-hit != 'true'
         run: |
           echo "Starting gclient sync..."
           date
           gclient sync -j$(nproc)
           date
           echo "gclient sync completed."
-
-      - name: Cache ANGLE Source Code (gclient sync)
-        id: cache-angle-source
-        uses: actions/cache@v4
-        with:
-          path: angle
-          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient') }}
 
       - name: Install Build Dependencies (Using install-build-deps.py)
         working-directory: angle
@@ -92,20 +93,33 @@ jobs:
       - name: Install vpython deps
         working-directory: angle
         run: |
-          ./depot_tools/vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
+          # Activate depot_tools environment AGAIN. This is CRUCIAL
+          source depot_tools/bootstrap_python3
+          export PATH="$PATH:$(pwd)/depot_tools"
+          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
 
       - name: Clean Build Directory
         working-directory: angle
         run: |
-          rm -rf out/Android_ARM64/*
-          echo "Build directory cleaned."
+          if [ -d "out/Android_ARM64" ]; then
+            rm -rf out/Android_ARM64/*
+            echo "Build directory cleaned."
+          else
+            echo "Build directory does not exist; skipping clean."
+          fi
 
       - name: Verify NDK Location After Sync
         working-directory: angle
         run: |
+          # Verify that vpython exists
+          if ! command -v vpython &> /dev/null
+          then
+            echo "ERROR: vpython not found in PATH!"
+            exit 1
+          fi
           NDK_PATH=$(find . -name "ndk" -type d -print -quit)
           if [ -z "$NDK_PATH" ]; then
-            echo "ERROR: NDK directory not found after gclient sync. Check gclient sync output and ensure the 'ndk' directory exists in the ANGLE tree as configured by ANGLE's DEPS file. If sync succeeded, NDK may not be needed until GN generation."
+            echo "ERROR: NDK directory not found after gclient sync."
             exit 1
           else
             echo "NDK found at: $NDK_PATH"
