@@ -54,7 +54,7 @@ jobs:
 
       - name: Configure gclient
         working-directory: chromium
-        run: gclient config https://chromium.googlesource.com/chromium/chromium.git
+        run: gclient config https://chromium.googlesource.com/angle/angle
 
       - name: Verify Configure - gclient
         working-directory: chromium
