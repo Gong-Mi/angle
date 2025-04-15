@@ -18,20 +18,6 @@ jobs:
       NINJA_JOBS: $(nproc)
 
     steps:
-      - name: Checkout ANGLE Source Code
-        uses: actions/checkout@v4
-        with:
-          repository: chromium/angle
-          path: angle
-          fetch-depth: 1
-
-      - name: Verify Checkout - ANGLE Source Code
-        working-directory: angle
-        run: |
-          pwd
-          ls -al
-          echo "ANGLE source code checkout verified."
-
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -54,8 +40,10 @@ jobs:
           echo "gclient is accessible in PATH."
 
       - name: Configure gclient
-        working-directory: angle
-        run: gclient config https://chromium.googlesource.com/angle/angle.git
+        working-directory: angle # 需要提前创建目录
+        run: |
+          mkdir -p angle
+          gclient config https://chromium.googlesource.com/angle/angle.git
 
       - name: Verify Configure - gclient
         working-directory: angle
@@ -64,20 +52,20 @@ jobs:
           cat .gclient
           echo "gclient configuration verified."
 
+      - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
+        working-directory: angle # 确保gclient在正确目录下sync
+        run: |
+          echo "Starting gclient sync (initial checkout)..."
+          date
+          gclient sync -j$(nproc)
+          date
+          echo "gclient sync (initial checkout) completed."
+
       - name: Install Build Dependencies (Using install-build-deps.py)
         working-directory: angle
         run: |
           sudo apt-get update
           python3 build/install-build-deps.py --no-prompt
-
-      - name: Sync ANGLE Dependencies (This will take a LONG time, but includes NDK/SDK)
-        working-directory: angle
-        run: |
-          echo "Starting gclient sync..."
-          date
-          gclient sync -j$(nproc)
-          date
-          echo "gclient sync completed."
 
       - name: Install vpython deps
         working-directory: angle
