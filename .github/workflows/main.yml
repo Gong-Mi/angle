@@ -92,7 +92,7 @@ jobs:
       - name: Install vpython deps
         working-directory: angle
         run: |
-          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
+          ./depot_tools/vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
 
       - name: Clean Build Directory
         working-directory: angle
