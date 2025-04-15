@@ -1,4 +1,4 @@
-name: 构建 ANGLE - Android ARM64 (依赖 gclient sync 获取 NDK/SDK) - 逐步验证
+name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK) - 逐步验证
 
 on:
   push:
@@ -9,122 +9,117 @@ on:
 jobs:
   build_angle_android_arm64_gclient_ndk:
     runs-on: ubuntu-latest
-    # 添加 actions/upload-artifact 的权限（如果你的仓库需要）
-    # permissions:
-    #   contents: read
-    #   actions: write
 
     env:
       DEPOT_TOOLS_PATH: depot_tools
-      ANDROID_NDK_VERSION: r26d # NDK 版本号，仅供参考，实际版本由 gclient sync 管理
+      ANDROID_NDK_VERSION: r26d
       TARGET_ANDROID_API_LEVEL: 34
       DEPOT_TOOLS_WINTOOLCHAIN: 0
-      NINJA_JOBS: $(nproc) # 定义 ninja 作业的数量。 如果需要，可以覆盖
+      NINJA_JOBS: $(nproc)
 
     steps:
-      - name: 检出 ANGLE 源代码
+      - name: Checkout ANGLE Source Code
         uses: actions/checkout@v4
         with:
           repository: chromium/angle
           path: angle
-          fetch-depth: 1 # 保持浅层检出，加速 workflow
+          fetch-depth: 1
 
-      - name: 验证检出 - ANGLE 源代码
+      - name: Verify Checkout - ANGLE Source Code
         working-directory: angle
         run: |
           pwd
-          ls -al # 列出当前目录内容，确认 ANGLE 代码已检出
-          echo "ANGLE 源代码检出已验证。"
+          ls -al
+          echo "ANGLE source code checkout verified."
 
-      - name: 安装 depot_tools
+      - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
           echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
 
-      - name: 验证安装 - depot_tools
-        working-directory: angle
+      - name: Verify Install - depot_tools
         run: |
           pwd
-          ls -al depot_tools # 列出 depot_tools 目录内容
+          ls -al depot_tools
           echo "DEPOT_TOOLS env var: $DEPOT_TOOLS"
           echo "PATH env var: $PATH"
-          echo "depot_tools 安装已验证。"
+          echo "depot_tools installation verified."
 
-      - name: 验证 depot_tools 是否在 PATH 中
+      - name: Verify depot_tools in PATH
         run: |
           echo "PATH from ENV file: $PATH"
           which gclient
-          gclient --version # 验证 gclient 是否工作
-          echo "gclient 可在 PATH 中访问。"
+          gclient --version
+          echo "gclient is accessible in PATH."
 
-      - name: 配置 gclient
+      - name: Configure gclient
         working-directory: angle
         run: gclient config https://chromium.googlesource.com/angle/angle.git
 
-      - name: 验证配置 - gclient
+      - name: Verify Configure - gclient
         working-directory: angle
         run: |
-          ls -al # 检查 .gclient 文件是否存在
-          cat .gclient # 查看 .gclient 文件内容
-          echo "gclient 配置已验证。"
+          ls -al
+          cat .gclient
+          echo "gclient configuration verified."
 
-      - name: 安装构建依赖项 (使用 install-build-deps.py)
+      - name: Install Build Dependencies (Using install-build-deps.py)
         working-directory: angle
         run: |
-          sudo apt-get update # 确保软件包列表为最新
-          python3 build/install-build-deps.py --no-prompt # 安装依赖项
+          sudo apt-get update
+          python3 build/install-build-deps.py --no-prompt
 
-      - name: 同步 ANGLE 依赖 (这需要很长时间，但包含 NDK/SDK)
+      - name: Sync ANGLE Dependencies (This will take a LONG time, but includes NDK/SDK)
         working-directory: angle
         run: |
-          echo "开始 gclient sync..." # 明确输出开始同步
-          date # 输出开始时间
-          gclient sync -j$(nproc) # 不需要 --deps-os，因为我们现在在 ANGLE 代码仓库中
-          date # 输出结束时间
-          echo "gclient sync 完成。"
+          echo "Starting gclient sync..."
+          date
+          gclient sync -j$(nproc)
+          date
+          echo "gclient sync completed."
 
-      - name: 安装 vpython 依赖
+      - name: Install vpython deps
         working-directory: angle
         run: |
-          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL # 可能需要手动调用此脚本
+          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
 
-      - name: 验证 NDK 位置（同步后）
+      - name: Clean Build Directory
+        working-directory: angle
+        run: |
+          rm -rf out/Android_ARM64/*
+          echo "Build directory cleaned."
+
+      - name: Verify NDK Location After Sync
         working-directory: angle
         run: |
           NDK_PATH=$(find . -name "ndk" -type d -print -quit)
           if [ -z "$NDK_PATH" ]; then
-            echo "ERROR: 在 gclient sync 后未找到 NDK 目录。请检查 gclient sync 输出并确保 ANGLE 树中存在 'ndk' 目录（根据 ANGLE 的 DEPS 文件配置）。 如果同步成功，则在 GN 生成之前可能不需要 NDK。"
+            echo "ERROR: NDK directory not found after gclient sync. Check gclient sync output and ensure the 'ndk' directory exists in the ANGLE tree as configured by ANGLE's DEPS file. If sync succeeded, NDK may not be needed until GN generation."
             exit 1
           else
-            echo "NDK 在以下位置找到: $NDK_PATH"
-            export ANDROID_NDK_HOME="$NDK_PATH" # 显式设置 NDK 根目录
-            echo "ANDROID_NDK_HOME 设置为: $ANDROID_NDK_HOME"
-            echo "NDK 目录位置取决于 ANGLE DEPS 文件。"
+            echo "NDK found at: $NDK_PATH"
+            export ANDROID_NDK_HOME="$NDK_PATH"
+            echo "ANDROID_NDK_HOME set to: $ANDROID_NDK_HOME"
+            echo "NDK directory location depends on the ANGLE DEPS file."
           fi
 
-      - name: 配置 ANGLE 构建 (GN) - Android ARM64
+      - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: angle
         run: |
-          # GN 配置，target_os 和 target_cpu 指定目标平台，android_ndk_api_level 指定 API Level
-          # is_debug=false 构建 Release 版本， angle_build_* 控制构建的 ANGLE 后端
-          # 移除 android_ndk_root 参数，让 GN 自动从 Chromium 源码树中查找 NDK
           gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
-          # is_debug=false: 构建 Release 版本。  改为 is_debug=true 以构建 Debug 版本.
-          # angle_build_*: 配置 ANGLE 后端。  当前设置为常见的 Android GLES/Vulkan 使用。
-          # 自定义这些标志以根据需要启用/禁用特定后端。
-          cat out/Android_ARM64/args.gn # 显示参数文件
-          echo "ANGLE 构建配置已生成。"
+          cat out/Android_ARM64/args.gn
+          echo "ANGLE build configuration generated."
 
-      - name: 构建 ANGLE (Ninja) - Android ARM64
+      - name: Build ANGLE (Ninja) - Android ARM64
         working-directory: angle
         run: |
-          ninja -C out/Android_ARM64 angle_library -j${{ env.NINJA_JOBS }} # 构建 angle_library 目标
-          echo "ANGLE 库已构建。"
+          ninja -C out/Android_ARM64 angle_library -j${{ env.NINJA_JOBS }}
+          echo "ANGLE library built."
 
-      - name: 上传构建产物 - Android ARM64
+      - name: Upload Build Artifacts - Android ARM64
         uses: actions/upload-artifact@v4
         with:
           name: angle-android-arm64-release-build-gclient-ndk
-          path: angle/out/Android_ARM64/libangle.so # 上传构建产物 libangle.so
+          path: angle/out/Android_ARM64/libangle.so
           if-no-files-found: error
