@@ -1,4 +1,4 @@
-name: Build ANGLE - Linux x64 (Retry sync with flags + Recent Chromium Revision)
+name: Build ANGLE - Android ARM64
 
 on:
   push:
@@ -12,6 +12,7 @@ jobs:
 
     env:
       DEPOT_TOOLS_PATH: depot_tools
+      ANDROID_NDK_VERSION: r25c # 可以根据需要更改 NDK 版本
 
     steps:
       - name: Checkout Chromium Source Code
@@ -19,7 +20,6 @@ jobs:
         with:
           repository: chromium/chromium
           path: chromium
-          ref: abcdef1234567890abcdef1234567890abcdef12 # 指定一个最近的 Chromium commit SHA
           fetch-depth: 1
 
       - name: Install depot_tools
@@ -33,44 +33,33 @@ jobs:
           echo "PATH from ENV file: $PATH"
           which gclient
 
+      - name: Install Android NDK
+        run: |
+          mkdir -p android-ndk
+          wget https://dl.google.com/android/repository/android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux.zip
+          unzip android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux.zip -d android-ndk
+          echo "ANDROID_NDK_HOME=$(pwd)/android-ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
+          echo "PATH=$PATH:$(pwd)/android-ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
+
       - name: Configure gclient
         working-directory: chromium
         run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
-      - name: Sync Chromium Dependencies (Retry on failure with flags)
+      - name: Sync Chromium Dependencies
         working-directory: chromium
-        run: |
-          set +e # Allow command to fail
-          LAST_EXIT_CODE=0
-          for i in {1..3}; do # Retry loop (up to 3 times)
-            echo "Attempting gclient sync, attempt $i"
-            gclient sync --reset --force --delete_unversioned_trees -v
-            LAST_EXIT_CODE=$?
-            if [ $LAST_EXIT_CODE -eq 0 ]; then
-              break # If successful, break the loop
-            fi
-            echo "gclient sync failed with exit code $LAST_EXIT_CODE, retrying in 15 seconds..."
-            sleep 15 # 增加重试间隔
-          done
-          set -e # Re-enable exit on error
+        run: gclient sync
 
-          # 在循环后检查最终退出码
-          if [ $LAST_EXIT_CODE -ne 0 ]; then
-            echo "gclient sync failed after multiple retries."
-            exit $LAST_EXIT_CODE
-          fi
-
-      - name: Configure ANGLE Build (GN)
+      - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: chromium/third_party/angle
         run: |
-          gn gen out/Debug --args='target_os="linux" target_cpu="x64" is_debug=true angle_build_gl=true angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
+          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
 
-      - name: Build ANGLE (Ninja)
+      - name: Build ANGLE (Ninja) - Android ARM64
         working-directory: chromium/third_party/angle
-        run: ninja -C out/Debug angle_tests -j$(nproc)
+        run: ninja -C out/Android_ARM64 angle_library -j$(nproc) # 构建 angle_library 目标
 
-      - name: Upload Build Artifacts
+      - name: Upload Build Artifacts - Android ARM64
         uses: actions/upload-artifact@v4
         with:
-          name: angle-linux-x64-debug-build
-          path: chromium/third_party/angle/out/Debug
+          name: angle-android-arm64-release-build
+          path: chromium/third_party/angle/out/Android_ARM64/libangle.so # 上传 libangle.so 库文件
