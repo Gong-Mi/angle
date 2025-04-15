@@ -18,7 +18,18 @@ jobs:
       NINJA_JOBS: $(nproc)
 
     steps:
-      - name: Install depot_tools
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install depot_tools and Cache
+        id: cache-depot-tools
+        uses: actions/cache@v4
+        with:
+          path: depot_tools
+          key: depot_tools-${{ runner.os }}
+
+      - name: Install depot_tools if not cached
+        if: steps.cache-depot-tools.outputs.cache-hit != 'true'
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
@@ -42,12 +53,6 @@ jobs:
       - name: Create ANGLE directory
         run: mkdir -p angle
 
-      - name: Install Build Dependencies (Using install-build-deps.py) #提前安装
-        working-directory: angle
-        run: |
-          sudo apt-get update
-          python3 build/install-build-deps.py --no-prompt
-
       - name: Configure gclient
         working-directory: angle
         run: gclient config https://chromium.googlesource.com/angle/angle.git
@@ -59,16 +64,29 @@ jobs:
           cat .gclient
           echo "gclient configuration verified."
 
+      - name: Cache ANGLE Source Code (gclient sync)
+        id: cache-angle-source
+        uses: actions/cache@v4
+        with:
+          path: angle
+          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient') }}
+
       - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
         working-directory: angle
         run: |
-          echo "Starting gclient sync (initial checkout)..."
+          echo "Starting gclient sync..."
           date
           gclient sync -j$(nproc)
           date
-          echo "gclient sync (initial checkout) completed."
+          echo "gclient sync completed."
 
-      - name: Install vpython deps #是否依赖上面两步存疑
+      - name: Install Build Dependencies (Using install-build-deps.py)
+        working-directory: angle
+        run: |
+          sudo apt-get update
+          python3 build/install-build-deps.py --no-prompt
+
+      - name: Install vpython deps
         working-directory: angle
         run: |
           vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
