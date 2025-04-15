@@ -1,103 +1,81 @@
-name: Build ANGLE for Linux ARM64 (on x64 Runner)
+name: Build ANGLE for Android ARM64
 
-# Controls when the workflow will run
 on:
   push:
-    branches: [ main ]  # Run on pushes to the main branch
+    branches: [ main ]
   pull_request:
-    branches: [ main ]  # Run on pull requests targeting the main branch
-  workflow_dispatch:     # Allow manual triggering from the Actions tab
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build_linux_arm64_on_x64: # Job 名称明确反映交叉编译
-    # 在标准的 GitHub x64 Ubuntu 虚拟机上运行
+  build_android_arm64:
     runs-on: ubuntu-latest
 
     steps:
-    # 步骤 1: 检出你的 ANGLE 代码仓库
     - name: Check out code
       uses: actions/checkout@v4
 
-    # 步骤 2: 设置 depot_tools (gclient 依赖它)
     - name: Set up depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        # Add depot_tools to the PATH for subsequent steps
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
-        # 设置环境变量，防止 gclient 尝试访问受保护的配置 (在 CI 环境中需要)
         echo "DEPOT_TOOLS_METRICS=0" >> $GITHUB_ENV
 
-    # 步骤 2.5: 配置 gclient (创建 .gclient 文件)
-    # 告诉 gclient 我们要管理 angle 解决方案，并指定其主仓库 URL
     - name: Configure gclient
       run: |
-        # 在仓库根目录运行 gclient config
-        # 这会创建 .gclient 文件
         gclient config --spec 'solutions = [
           {
             "url": "https://chromium.googlesource.com/angle/angle.git",
             "managed": False,
-            "name": "angle", # 这个 name 主要用于 DEPS 文件查找，不会强制创建子目录
+            "name": "angle",
             "deps_file": "DEPS",
             "custom_deps": {},
           },
         ]'
 
-    # 步骤 3: 同步依赖 (包括 Clang 工具链)
-    # gclient 会根据目标平台下载合适的工具链和 sysroot
     - name: Sync dependencies (gclient sync)
-      run: gclient sync --nohooks --no-history --with_branch_heads --with_tags > gclient_sync.log 2>&1 # 将输出重定向到文件
+      run: gclient sync --nohooks --no-history --with_branch_heads --with_tags > gclient_sync.log 2>&1
 
-    # 步骤 4: 生成 Ninja 构建文件 (配置构建)
-    # **关键：** 在这里设置正确的 gn args，指明目标是 arm64
-    - name: Generate build files (gn gen for ARM64)
+    - name: Set up Android SDK and NDK # 添加设置 Android SDK/NDK 的步骤
+      uses: android-actions/setup-android-sdk@v4 # 使用 actions/setup-android-sdk action
+      with:
+        ndk-version: 'latest' # 使用最新的 NDK 版本
+
+    - name: Generate build files (gn gen for Android ARM64)
       run: |
-        # 假设 gn/ninja 在 angle 目录下运行 (由 checkout 决定)
-        gn gen out/Linux_arm64_Release --args='
-          target_os="linux"          # 目标操作系统
-          target_cpu="arm64"         # *** 关键：指定目标 CPU 为 arm64 ***
-          is_debug=false           # 构建 Release 版本
-          is_clang=true            # 使用 gclient 下载的 Clang (它支持交叉编译)
-          use_custom_libcxx=true   # 使用 Clang 自带的 libc++
+        gn gen out/Android_arm64_Release --args='
+          target_os="android"
+          target_cpu="arm64"
+          is_debug=false
+          is_clang=true
+          use_custom_libcxx=true
+          ndk_path="${ANDROID_NDK_HOME}" # 设置 NDK 路径，使用环境变量
           # --- ANGLE Specific Features ---
-          # 根据你的需求启用或禁用 ANGLE 后端/特性
-          # 参考 ANGLE 文档了解这些标志
           angle_enable_vulkan=true
           angle_enable_gl=true
-          # angle_enable_gles1=false
-          # angle_use_wayland=true
-          # angle_use_x11=true
           # --- Other Common Flags ---
-          dcheck_always_on=false   # Release 版本通常关闭 dcheck
-          is_component_build=false # 构建静态库 (通常用于分发)
-                                   # 设置为 true 可加快开发中的增量链接
-          # ... 在下方添加其他需要的 gn 参数 ...
-        ' > gn_gen.log 2>&1 # 将输出重定向到文件
+          dcheck_always_on=false
+          is_component_build=false
+        ' > gn_gen.log 2>&1
 
-    # 步骤 5: 编译 ANGLE (ninja)
-    # Ninja 会使用 gn 配置好的交叉编译工具链进行编译
     - name: Build ANGLE (ninja)
-      run: ninja -C out/Linux_arm64_Release > ninja_build.log 2>&1 # 将输出重定向到文件
+      run: ninja -C out/Android_arm64_Release > ninja_build.log 2>&1
 
-    # 步骤 6 (可选): 上传构建产物 (ARM64 库文件)
-    - name: Upload ANGLE ARM64 libraries
+    - name: Upload ANGLE Android ARM64 libraries
       uses: actions/upload-artifact@v4
       with:
-        name: angle-linux-arm64-release-libs # 产物包名称
-        path: | # 需要包含在产物包中的文件/目录列表
-          out/Linux_arm64_Release/libEGL.so
-          out/Linux_arm64_Release/libGLESv2.so
-          out/Linux_arm64_Release/libGLESv1_CM.so
-          # out/Linux_arm64_Release/*.a # 如果需要静态库
-          # out/Linux_arm64_Release/angle_* # 如果需要示例程序
-        if-no-files-found: error # 如果指定路径下找不到文件则报错
+        name: angle-android-arm64-release-libs
+        path: |
+          out/Android_arm64_Release/libEGL.so
+          out/Android_arm64_Release/libGLESv2.so
+          out/Android_arm64_Release/libGLESv1_CM.so
+        if-no-files-found: error
 
-    # 步骤 7: 上传构建日志
     - name: Upload Build Logs
       uses: actions/upload-artifact@v4
       with:
-        name: build-logs # 产物包名称，用于存放日志
-        path: | # 需要包含在产物包中的文件/目录列表
+        name: build-logs
+        path: |
           gclient_sync.log
           gn_gen.log
           ninja_build.log
