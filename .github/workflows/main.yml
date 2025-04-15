@@ -1,7 +1,114 @@
+name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK) - 逐步验证
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build_angle_android_arm64_gclient_ndk:
+    runs-on: ubuntu-latest
+
+    env:
+      DEPOT_TOOLS_PATH: depot_tools
+      ANDROID_NDK_VERSION: r26d
+      TARGET_ANDROID_API_LEVEL: 34
+      DEPOT_TOOLS_WINTOOLCHAIN: 0
+      NINJA_JOBS: $(nproc)
+
+    steps:
+      - name: Install depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
+          echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
+
+      - name: Verify Install - depot_tools
+        run: |
+          pwd
+          ls -al depot_tools
+          echo "DEPOT_TOOLS env var: $DEPOT_TOOLS"
+          echo "PATH env var: $PATH"
+          echo "depot_tools installation verified."
+
+      - name: Verify depot_tools in PATH
+        run: |
+          echo "PATH from ENV file: $PATH"
+          which gclient
+          gclient --version
+          echo "gclient is accessible in PATH."
+
+      - name: Create ANGLE directory
+        run: mkdir -p angle
+
+      - name: Install Build Dependencies (Using install-build-deps.py) #提前安装
+        working-directory: angle
+        run: |
+          sudo apt-get update
+          python3 build/install-build-deps.py --no-prompt
+
+      - name: Configure gclient
+        working-directory: angle
+        run: gclient config https://chromium.googlesource.com/angle/angle.git
+
+      - name: Verify Configure - gclient
+        working-directory: angle
+        run: |
+          ls -al
+          cat .gclient
+          echo "gclient configuration verified."
+
+      - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
+        working-directory: angle
         run: |
           echo "Starting gclient sync (initial checkout)..."
           date
-          vpython # 添加vpython, 为了保证所有依赖都安装完全
           gclient sync -j$(nproc)
           date
           echo "gclient sync (initial checkout) completed."
+
+      - name: Install vpython deps #是否依赖上面两步存疑
+        working-directory: angle
+        run: |
+          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
+
+      - name: Clean Build Directory
+        working-directory: angle
+        run: |
+          rm -rf out/Android_ARM64/*
+          echo "Build directory cleaned."
+
+      - name: Verify NDK Location After Sync
+        working-directory: angle
+        run: |
+          NDK_PATH=$(find . -name "ndk" -type d -print -quit)
+          if [ -z "$NDK_PATH" ]; then
+            echo "ERROR: NDK directory not found after gclient sync. Check gclient sync output and ensure the 'ndk' directory exists in the ANGLE tree as configured by ANGLE's DEPS file. If sync succeeded, NDK may not be needed until GN generation."
+            exit 1
+          else
+            echo "NDK found at: $NDK_PATH"
+            export ANDROID_NDK_HOME="$NDK_PATH"
+            echo "ANDROID_NDK_HOME set to: $ANDROID_NDK_HOME"
+            echo "NDK directory location depends on the ANGLE DEPS file."
+          fi
+
+      - name: Configure ANGLE Build (GN) - Android ARM64
+        working-directory: angle
+        run: |
+          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
+          cat out/Android_ARM64/args.gn
+          echo "ANGLE build configuration generated."
+
+      - name: Build ANGLE (Ninja) - Android ARM64
+        working-directory: angle
+        run: |
+          ninja -C out/Android_ARM64 angle_library -j${{ env.NINJA_JOBS }}
+          echo "ANGLE library built."
+
+      - name: Upload Build Artifacts - Android ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: angle-android-arm64-release-build-gclient-ndk
+          path: angle/out/Android_ARM64/libangle.so
+          if-no-files-found: error
