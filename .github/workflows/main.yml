@@ -39,11 +39,12 @@ jobs:
           gclient --version
           echo "gclient is accessible in PATH."
 
+      - name: Create ANGLE directory
+        run: mkdir -p angle
+
       - name: Configure gclient
-        working-directory: angle # 需要提前创建目录
-        run: |
-          mkdir -p angle
-          gclient config https://chromium.googlesource.com/angle/angle.git
+        working-directory: angle # 工作路径统一。
+        run: gclient config https://chromium.googlesource.com/angle/angle.git
 
       - name: Verify Configure - gclient
         working-directory: angle
