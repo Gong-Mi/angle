@@ -41,7 +41,24 @@ jobs:
           NDK_PATH_VERSIONED=${NDK_EXTRACT_DIR}/android-ndk-${{ env.ANDROID_NDK_VERSION }}
 
           echo "Downloading NDK from ${NDK_DOWNLOAD_URL}..."
-          wget --quiet ${NDK_DOWNLOAD_URL} -O ${NDK_FILENAME}
+
+          RETRY_COUNT=3
+          for i in $(seq 1 $RETRY_COUNT); do
+            echo "Attempt $i: Downloading NDK..."
+            wget --quiet ${NDK_DOWNLOAD_URL} -O ${NDK_FILENAME}
+            if [ $? -eq 0 ]; then
+              echo "NDK Downloaded successfully on attempt $i."
+              break # Exit loop if download is successful
+            else
+              echo "Download failed on attempt $i. Retrying in 5 seconds..."
+              sleep 5
+            fi
+            if [ $i -eq $RETRY_COUNT ]; then
+              echo "Download failed after $RETRY_COUNT attempts. Exiting."
+              exit 1 # Fail the step after max retries
+            fi
+          done
+
           echo "Extracting NDK to ${NDK_EXTRACT_DIR}..."
           unzip -q ${NDK_FILENAME} -d ${NDK_EXTRACT_DIR}
           rm ${NDK_FILENAME} # Clean up the zip file
