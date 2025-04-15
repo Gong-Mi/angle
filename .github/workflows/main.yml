@@ -1,4 +1,4 @@
-name: Build ANGLE - Linux x64 (Retry sync with flags)
+name: Build ANGLE - Linux x64 (Retry sync with flags + Recent Chromium Revision)
 
 on:
   push:
@@ -19,8 +19,7 @@ jobs:
         with:
           repository: chromium/chromium
           path: chromium
-          # 使用 fetch-depth: 0 可能会帮助 gclient sync，但会显著增加 checkout 时间。
-          # 暂时保持 fetch-depth: 1。
+          ref: abcdef1234567890abcdef1234567890abcdef12 # 指定一个最近的 Chromium commit SHA
           fetch-depth: 1
 
       - name: Install depot_tools
@@ -38,25 +37,22 @@ jobs:
         working-directory: chromium
         run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
-      # 移除了无效的 'Force gclient to use HTTPS' 步骤
-
       - name: Sync Chromium Dependencies (Retry on failure with flags)
         working-directory: chromium
         run: |
-          set +e # 允许命令失败
+          set +e # Allow command to fail
           LAST_EXIT_CODE=0
-          for i in {1..3}; do # 重试循环 (最多 3 次)
+          for i in {1..3}; do # Retry loop (up to 3 times)
             echo "Attempting gclient sync, attempt $i"
-            # 添加 --reset --force --delete_unversioned_trees 和 -v (verbose) 标志
             gclient sync --reset --force --delete_unversioned_trees -v
             LAST_EXIT_CODE=$?
             if [ $LAST_EXIT_CODE -eq 0 ]; then
-              break # 如果成功，则跳出循环
+              break # If successful, break the loop
             fi
             echo "gclient sync failed with exit code $LAST_EXIT_CODE, retrying in 15 seconds..."
             sleep 15 # 增加重试间隔
           done
-          set -e # 重新启用错误时退出
+          set -e # Re-enable exit on error
 
           # 在循环后检查最终退出码
           if [ $LAST_EXIT_CODE -ne 0 ]; then
