@@ -101,26 +101,7 @@ jobs:
             echo "Build directory does not exist; skipping clean."
           fi
 
-      - name: Verify NDK Location After Sync
-        working-directory: angle
-        run: |
-          # Verify that vpython exists
-          if ! command -v vpython &> /dev/null
-          then
-            echo "ERROR: vpython not found in PATH!"
-            exit 1
-          fi
-          NDK_PATH=$(find . -name "ndk" -type d -print -quit)
-          if [ -z "$NDK_PATH" ]; then
-            echo "ERROR: NDK directory not found after gclient sync."
-            exit 1
-          else
-            echo "NDK found at: $NDK_PATH"
-            export ANDROID_NDK_HOME="$NDK_PATH"
-            echo "ANDROID_NDK_HOME set to: $ANDROID_NDK_HOME"
-            echo "NDK directory location depends on the ANGLE DEPS file."
-          fi
-
+      
       - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: angle
         run: |
