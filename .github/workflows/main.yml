@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout Chromium Source Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: chromium/chromium # 使用 chromium/chromium 仓库，ANGLE 在其中
           path: chromium # 将代码检出到 chromium 目录
