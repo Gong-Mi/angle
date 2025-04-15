@@ -1,4 +1,4 @@
-name: Build ANGLE - Android ARM64 (Chromium Sync Method - Inefficient Fallback)
+name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build_angle_android_arm64_chromium_sync:
+  build_angle_android_arm64_gclient_ndk:
     runs-on: ubuntu-latest
     # Add permissions for actions/upload-artifact if your repo requires it
     # permissions:
@@ -16,7 +16,7 @@ jobs:
 
     env:
       DEPOT_TOOLS_PATH: depot_tools
-      ANDROID_NDK_VERSION: r26d # 保持 r26d，虽然下载问题可能与版本无关
+      ANDROID_NDK_VERSION: r26d # 仍然保留 NDK 版本，虽然可能不再直接使用下载
       TARGET_ANDROID_API_LEVEL: 34
       DEPOT_TOOLS_WINTOOLCHAIN: 0
 
@@ -26,7 +26,7 @@ jobs:
         with:
           repository: chromium/chromium
           path: chromium
-          fetch-depth: 1 # 仍然保持浅层检出，希望能加快 checkout 速度
+          fetch-depth: 1 # 保持浅层检出
 
       - name: Install depot_tools
         run: |
@@ -39,56 +39,23 @@ jobs:
           echo "PATH from ENV file: $PATH"
           which gclient
 
-      - name: Install Android NDK
-        run: |
-          sudo apt-get update && sudo apt-get install -y wget unzip python3 --no-install-recommends
-          NDK_FILENAME=android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux-x86_64.zip
-          NDK_DOWNLOAD_URL=https://dl.google.com/android/repository/${NDK_FILENAME}
-          NDK_EXTRACT_DIR=${{ github.workspace }}/android-ndk
-          NDK_PATH_VERSIONED=${NDK_EXTRACT_DIR}/android-ndk-${{ env.ANDROID_NDK_VERSION }}
-
-          echo "Downloading NDK from ${NDK_DOWNLOAD_URL}..."
-
-          RETRY_COUNT=3 # 保持重试逻辑，以防网络问题仍然存在
-          for i in $(seq 1 $RETRY_COUNT); do
-            echo "Attempt $i: Downloading NDK..."
-            wget --quiet ${NDK_DOWNLOAD_URL} -O ${NDK_FILENAME}
-            if [ $? -eq 0 ]; then
-              echo "NDK Downloaded successfully on attempt $i."
-              break
-            else
-              echo "Download failed on attempt $i. Retrying in 5 seconds..."
-              sleep 5
-            fi
-            if [ $i -eq $RETRY_COUNT ]; then
-              echo "Download failed after $RETRY_COUNT attempts. Exiting."
-              exit 1
-            fi
-          done
-
-
-          echo "Extracting NDK to ${NDK_EXTRACT_DIR}..."
-          unzip -q ${NDK_FILENAME} -d ${NDK_EXTRACT_DIR}
-          rm ${NDK_FILENAME} # Clean up the zip file
-
-          echo "ANDROID_NDK_HOME=$(pwd)/android-ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV # 注意这里是 ANDROID_NDK_HOME
-          echo "PATH=$PATH:$(pwd)/android-ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV # 再次添加到 PATH
-
-          echo "ANDROID_NDK_ROOT=${NDK_PATH_VERSIONED}" >> $GITHUB_ENV # 仍然设置 ANDROID_NDK_ROOT，以防构建脚本需要
-          echo "ANDROID_NDK_ROOT set to ${NDK_PATH_VERSIONED}"
+      # - name: Install Android NDK  - **!! 去掉显式下载 NDK 的步骤 !!**
+      #   run: |
+      #     # ... (之前下载 NDK 的代码全部移除) ...
 
       - name: Configure gclient
         working-directory: chromium
         run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
-      - name: Sync Chromium Dependencies (This will take a LONG time)
+      - name: Sync Chromium Dependencies (This will take a LONG time, but hopefully includes NDK/SDK)
         working-directory: chromium
-        run: gclient sync -j$(nproc) # 同步 Chromium 及其所有依赖，非常耗时
+        run: gclient sync -j$(nproc) # 期望 gclient sync 能处理 NDK/SDK 依赖
 
       - name: Configure ANGLE Build (GN) - Android ARM64
         working-directory: chromium/third_party/angle
         run: |
-          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_root="'$ANDROID_NDK_ROOT'" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false' # 注意 NDK_ROOT 的传递方式
+          # 尝试让 GN 自动检测 NDK 路径，或者使用 Chromium 源码树中可能包含的 NDK/SDK
+          gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false' #  !! 注意: 这里去掉了 android_ndk_root 参数 !!  让 GN 尝试自动查找
 
       - name: Build ANGLE (Ninja) - Android ARM64
         working-directory: chromium/third_party/angle
@@ -97,5 +64,5 @@ jobs:
       - name: Upload Build Artifacts - Android ARM64
         uses: actions/upload-artifact@v4
         with:
-          name: angle-android-arm64-release-build-chromium-sync
+          name: angle-android-arm64-release-build-gclient-ndk
           path: chromium/third_party/angle/out/Android_ARM64/libangle.so # 上传 libangle.so 库文件
