@@ -1,4 +1,4 @@
-name: Build ANGLE - Linux x64 (Environment Files + gclient config)
+name: Build ANGLE - Linux x64 (Environment Files + gclient config + HTTPS + Retry)
 
 on:
   push:
@@ -33,11 +33,23 @@ jobs:
 
       - name: Configure gclient
         working-directory: chromium
-        run: gclient config https://chromium.googlesource.com/chromium/chromium.git # 配置 gclient
+        run: gclient config https://chromium.googlesource.com/chromium/chromium.git
 
-      - name: Sync Chromium Dependencies
+      - name: Force gclient to use HTTPS
         working-directory: chromium
-        run: gclient sync
+        run: gclient config --unauthenticated-http # Force HTTPS
+
+      - name: Sync Chromium Dependencies (Retry on failure)
+        working-directory: chromium
+        run: |
+          set +e # Allow command to fail
+          for i in {1..3}; do # Retry loop (up to 3 times)
+            echo "Attempting gclient sync, attempt $i"
+            gclient sync && break # If successful, break the loop
+            echo "gclient sync failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          set -e # Re-enable exit on error
 
       - name: Configure ANGLE Build (GN)
         working-directory: chromium/third_party/angle
