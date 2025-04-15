@@ -90,14 +90,7 @@ jobs:
           sudo apt-get update
           python3 angle/build/install-build-deps.py --no-prompt
 
-      - name: Install vpython deps
-        working-directory: angle
-        run: |
-          # Activate depot_tools environment AGAIN. This is CRUCIAL
-          source depot_tools/bootstrap_python3
-          export PATH="$PATH:$(pwd)/depot_tools"
-          vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
-
+      
       - name: Clean Build Directory
         working-directory: angle
         run: |
