@@ -1,104 +1,22 @@
-name: Build ANGLE - Android ARM64 (Rely on gclient sync for NDK/SDK) - 逐步验证
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-jobs:
-  build_angle_android_arm64_gclient_ndk:
-    runs-on: ubuntu-latest
-
-    env:
-      DEPOT_TOOLS_PATH: depot_tools
-      ANDROID_NDK_VERSION: r26d
-      TARGET_ANDROID_API_LEVEL: 34
-      DEPOT_TOOLS_WINTOOLCHAIN: 0
-      NINJA_JOBS: $(nproc)
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install depot_tools and Cache
-        id: cache-depot-tools
-        uses: actions/cache@v4
-        with:
-          path: depot_tools
-          key: depot_tools-${{ runner.os }}
-
-      - name: Install depot_tools if not cached
-        if: steps.cache-depot-tools.outputs.cache-hit != 'true'
-        run: |
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV
-          echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV
-
-      - name: Verify Install - depot_tools
-        run: |
-          pwd
-          ls -al depot_tools
-          echo "DEPOT_TOOLS env var: $DEPOT_TOOLS"
-          echo "PATH env var: $PATH"
-          echo "depot_tools installation verified."
-
-      - name: Verify depot_tools in PATH
-        run: |
-          echo "PATH from ENV file: $PATH"
-          which gclient
-          gclient --version
-          echo "gclient is accessible in PATH."
-
-      - name: Create ANGLE directory
-        run: mkdir -p angle
-
-      - name: Configure gclient
-        working-directory: angle
-        run: gclient config https://chromium.googlesource.com/angle/angle.git
-
-      - name: Verify Configure - gclient
-        working-directory: angle
-        run: |
-          ls -al
-          cat .gclient
-          echo "gclient configuration verified."
-
-      - name: Cache ANGLE Source Code (gclient sync)
-        id: cache-angle-source
-        uses: actions/cache@v4
-        with:
-          path: angle
-          key: angle-source-${{ runner.os }}-${{ hashFiles('angle/.gclient') }}
-
-      - name: Sync ANGLE Source Code (Using gclient sync for initial checkout)
-        working-directory: angle
-        run: |
-          echo "Starting gclient sync..."
-          date
-          gclient sync -j$(nproc)
-          date
-          echo "gclient sync completed."
-
       - name: Install Build Dependencies (Using install-build-deps.py)
-        working-directory: angle
+        working-directory: angle # Corrected working directory
         run: |
           sudo apt-get update
-          python3 build/install-build-deps.py --no-prompt
+          python3 angle/build/install-build-deps.py --no-prompt
 
       - name: Install vpython deps
-        working-directory: angle
+        working-directory: angle # Corrected working directory
         run: |
           vpython tools/android/install-android-sdk.py --android_api_level $TARGET_ANDROID_API_LEVEL
 
       - name: Clean Build Directory
-        working-directory: angle
+        working-directory: angle  # Corrected working directory
         run: |
           rm -rf out/Android_ARM64/*
           echo "Build directory cleaned."
 
       - name: Verify NDK Location After Sync
-        working-directory: angle
+        working-directory: angle # Corrected working directory
         run: |
           NDK_PATH=$(find . -name "ndk" -type d -print -quit)
           if [ -z "$NDK_PATH" ]; then
@@ -112,14 +30,14 @@ jobs:
           fi
 
       - name: Configure ANGLE Build (GN) - Android ARM64
-        working-directory: angle
+        working-directory: angle # Corrected working directory
         run: |
           gn gen out/Android_ARM64 --args='target_os="android" target_cpu="arm64" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false angle_build_gl=false angle_build_gles=true angle_build_vulkan=true angle_build_d3d=false angle_build_metal=false'
           cat out/Android_ARM64/args.gn
           echo "ANGLE build configuration generated."
 
       - name: Build ANGLE (Ninja) - Android ARM64
-        working-directory: angle
+        working-directory: angle # Corrected working directory
         run: |
           ninja -C out/Android_ARM64 angle_library -j${{ env.NINJA_JOBS }}
           echo "ANGLE library built."
