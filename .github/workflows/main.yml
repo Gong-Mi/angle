@@ -1,4 +1,4 @@
-name: Build ANGLE - Linux x64
+name: Build ANGLE - Linux x64 (Environment Files)
 
 on:
   push:
@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DEPOT_TOOLS_PATH: depot_tools
+      DEPOT_TOOLS_PATH: depot_tools # 定义 depot_tools 目录的变量 (虽然这里定义了，但实际上会被 Environment Files 覆盖，可以删除这个 env 定义)
 
     steps:
       - name: Checkout Chromium Source Code
-        uses: actions/checkout@v4  # 更新到 v4 版本
+        uses: actions/checkout@v4
         with:
           repository: chromium/chromium
           path: chromium
@@ -23,11 +23,13 @@ jobs:
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "::add-path::$(pwd)/depot_tools"
+          echo "DEPOT_TOOLS=$(pwd)/depot_tools" >> $GITHUB_ENV # 设置 DEPOT_TOOLS 环境变量 in $GITHUB_ENV
+          echo "PATH=$PATH:$(pwd)/depot_tools" >> $GITHUB_ENV # 将 depot_tools 加入 PATH in $GITHUB_ENV (为了简化)
 
       - name: Verify depot_tools in PATH
         run: |
-          which gclient
+          echo "PATH from ENV file: $PATH" # 检查 PATH 环境变量
+          which gclient # 验证 gclient 是否在 PATH 中
 
       - name: Sync Chromium Dependencies
         working-directory: chromium
@@ -43,7 +45,7 @@ jobs:
         run: ninja -C out/Debug angle_tests -j$(nproc)
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4  # 更新到 v4 版本
+        uses: actions/upload-artifact@v4
         with:
           name: angle-linux-x64-debug-build
           path: chromium/third_party/angle/out/Debug
