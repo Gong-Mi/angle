@@ -10,17 +10,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      DEPOT_TOOLS_PATH: depot_tools
+
     steps:
       - name: Checkout Chromium Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4  # 更新到 v4 版本
         with:
-          repository: chromium/chromium # 使用 chromium/chromium 仓库，ANGLE 在其中
-          path: chromium # 将代码检出到 chromium 目录
+          repository: chromium/chromium
+          path: chromium
 
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          export PATH="$PATH:$(pwd)/depot_tools"
+          echo "::add-path::$(pwd)/depot_tools"
+
+      - name: Verify depot_tools in PATH
+        run: |
+          which gclient
 
       - name: Sync Chromium Dependencies
         working-directory: chromium
@@ -33,10 +40,10 @@ jobs:
 
       - name: Build ANGLE (Ninja)
         working-directory: chromium/third_party/angle
-        run: ninja -C out/Debug angle_tests -j$(nproc) # 使用所有可用的处理器核心加速编译
+        run: ninja -C out/Debug angle_tests -j$(nproc)
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # 更新到 v4 版本
         with:
           name: angle-linux-x64-debug-build
-          path: chromium/third_party/angle/out/Debug # 上传整个 out/Debug 目录，包含库文件和可执行文件
+          path: chromium/third_party/angle/out/Debug
