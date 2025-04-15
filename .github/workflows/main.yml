@@ -1,4 +1,6 @@
-name: Build ANGLE for Linux ARM64
+# .github/workflows/build-angle-arm64-on-x64.yml
+
+name: Build ANGLE for Linux ARM64 (on x64 Runner)
 
 # 控制 workflow 何时运行
 on:
@@ -9,8 +11,9 @@ on:
   workflow_dispatch:    # 允许手动从 Actions 页面触发运行
 
 jobs:
-  build_linux_arm64:
-    runs-on: ubuntu-latest # 使用 GitHub 提供的最新版 Ubuntu 虚拟机
+  build_linux_arm64_on_x64: # Job 名称明确反映交叉编译
+    # 在标准的 GitHub x64 Ubuntu 虚拟机上运行
+    runs-on: ubuntu-latest 
 
     steps:
     # 步骤 1: 检出你的 ANGLE 代码仓库
@@ -21,44 +24,56 @@ jobs:
     - name: Set up depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        # Add depot_tools to the PATH for subsequent steps
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
         # 设置环境变量，防止 gclient 尝试访问受保护的配置 (在 CI 环境中需要)
         echo "DEPOT_TOOLS_METRICS=0" >> $GITHUB_ENV
 
     # 步骤 3: 同步依赖 (包括 Clang 工具链)
-    # 注意：这一步会下载很多东西，可能需要一些时间
+    # gclient 会根据目标平台下载合适的工具链和 sysroot
     - name: Sync dependencies (gclient sync)
       run: gclient sync --nohooks --no-history --with_branch_heads --with_tags
 
     # 步骤 4: 生成 Ninja 构建文件 (配置构建)
-    # **关键：** 在这里设置正确的 gn args
-    - name: Generate build files (gn gen)
+    # **关键：** 在这里设置正确的 gn args，指明目标是 arm64
+    - name: Generate build files (gn gen for ARM64)
       run: |
-        gn gen out/Linux_arm64 --args='
-          target_os="linux"
-          target_cpu="arm64"
-          is_debug=false 
-          is_clang=true
-          use_custom_libcxx=true
-          angle_enable_vulkan=true # 根据需要启用/禁用特性
-          # angle_enable_gl=false 
+        # 进入 angle 目录 (如果 gclient 创建了子目录)
+        # 如果代码在根目录，删除 'cd angle &&'
+        cd angle && gn gen out/Linux_arm64_Release --args='
+          target_os="linux"          # 目标操作系统
+          target_cpu="arm64"         # *** 关键：指定目标 CPU 为 arm64 ***
+          is_debug=false           # 构建 Release 版本
+          is_clang=true            # 使用 gclient 下载的 Clang (它支持交叉编译)
+          use_custom_libcxx=true   # 使用 Clang 自带的 libc++
+          # --- ANGLE Specific Features ---
+          # 根据你的需求启用或禁用 ANGLE 后端/特性
+          angle_enable_vulkan=true
+          angle_enable_gl=true
           # angle_enable_gles1=false
-          # dcheck_always_on=false # Release 版本通常关闭 dcheck
+          # angle_use_wayland=true
+          # angle_use_x11=true
+          # --- Other Common Flags ---
+          dcheck_always_on=false   # Release 版本通常关闭 dcheck
+          is_component_build=false # 构建静态库
           # ... 其他你需要的 ANGLE 构建参数 ...
         '
 
     # 步骤 5: 编译 ANGLE (ninja)
+    # Ninja 会使用 gn 配置好的交叉编译工具链进行编译
     - name: Build ANGLE (ninja)
-      run: ninja -C out/Linux_arm64
+      # 调整路径 (如果需要)
+      run: cd angle && ninja -C out/Linux_arm64_Release
 
-    # 步骤 6 (可选): 上传构建产物 (库文件)
-    - name: Upload ANGLE libraries
+    # 步骤 6 (可选): 上传构建产物 (ARM64 库文件)
+    - name: Upload ANGLE ARM64 libraries
       uses: actions/upload-artifact@v4
       with:
-        name: angle-linux-arm64-libs
-        path: |
-          out/Linux_arm64/*.so
-          out/Linux_arm64/*.a
-          # out/Linux_arm64/angle_end2end_tests # 如果需要测试程序
-          # ... 其他你需要的文件 ...
-        if-no-files-found: error # 如果没找到文件则报错
+        name: angle-linux-arm64-release-libs # 产物名称保持不变
+        path: | # 路径指向 ARM64 的输出目录
+          angle/out/Linux_arm64_Release/libEGL.so
+          angle/out/Linux_arm64_Release/libGLESv2.so
+          angle/out/Linux_arm64_Release/libGLESv1_CM.so
+          # angle/out/Linux_arm64_Release/*.a
+          # angle/out/Linux_arm64_Release/angle_*
+        if-no-files-found: error
