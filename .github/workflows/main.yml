@@ -1,4 +1,4 @@
-name: Build ANGLE - Android ARM64 Standalone
+name: Build ANGLE - Android ARM64 (Targeting Android 14)
 
 on:
   push:
@@ -7,26 +7,24 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build_angle_android_arm64:
+  build_angle_android_arm64_api34:
     runs-on: ubuntu-latest
     # Add permissions for actions/upload-artifact if your repo requires it
     # permissions:
     #   contents: read
-    #   actions: write # or actions: read if only downloading artifacts
+    #   actions: write
 
     env:
-      # Using ANDROID_NDK_ROOT which is more standard for build systems
-      ANDROID_NDK_VERSION: r25c # Make sure this version is compatible
-      DEPOT_TOOLS_WINTOOLCHAIN: 0 # Prevent depot_tools from downloading Windows toolchains on Linux
+      ANDROID_NDK_VERSION: r26d
+      TARGET_ANDROID_API_LEVEL: 34
+      DEPOT_TOOLS_WINTOOLCHAIN: 0
 
     steps:
       # 1. Install depot_tools (Needed for gclient)
       - name: Install depot_tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git ${{ github.workspace }}/depot_tools
-          # Add to PATH for this and subsequent steps
           echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
-          # Optional: Set DEPOT_TOOLS_PATH env var if needed by any scripts, though PATH is usually sufficient
           echo "DEPOT_TOOLS_PATH=${{ github.workspace }}/depot_tools" >> $GITHUB_ENV
 
       # 2. Verify depot_tools installation
@@ -37,7 +35,7 @@ jobs:
       - name: Install Android NDK ${{ env.ANDROID_NDK_VERSION }}
         run: |
           sudo apt-get update && sudo apt-get install -y wget unzip python3 --no-install-recommends
-          NDK_FILENAME=android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux.zip
+          NDK_FILENAME=android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux-x86_64.zip
           NDK_DOWNLOAD_URL=https://dl.google.com/android/repository/${NDK_FILENAME}
           NDK_EXTRACT_DIR=${{ github.workspace }}/android-ndk
           NDK_PATH_VERSIONED=${NDK_EXTRACT_DIR}/android-ndk-${{ env.ANDROID_NDK_VERSION }}
@@ -50,71 +48,44 @@ jobs:
 
           # Set ANDROID_NDK_ROOT environment variable for build scripts
           echo "ANDROID_NDK_ROOT=${NDK_PATH_VERSIONED}" >> $GITHUB_ENV
-          # Add NDK tools to PATH (optional, but can be helpful)
-          # echo "${NDK_PATH_VERSIONED}" >> $GITHUB_PATH
-
           echo "ANDROID_NDK_ROOT set to ${NDK_PATH_VERSIONED}"
+          # Verify NDK extraction
+          ls -l ${NDK_PATH_VERSIONED}
 
-      # 4. Checkout ANGLE Source Code
-      # Note: Using the official source. You could use google/angle mirror on GitHub too.
+      # 4. Checkout ANGLE Source Code using gclient
       - name: Checkout ANGLE Source Code
         run: |
-          # Use gclient to checkout ANGLE and its DEPS
-          # Create a directory to hold the gclient configuration and source
           mkdir angle_build_dir
           cd angle_build_dir
-          # Configure gclient to checkout ANGLE
           gclient config --unmanaged https://chromium.googlesource.com/angle/angle.git
-          # Fetch ANGLE source and its dependencies specified in DEPS file
+          # Fetch ANGLE source and its dependencies
+          # Using --no-history can speed things up if full history isn't needed
           gclient sync --no-history -j$(nproc)
 
-        # Alternative using actions/checkout (less common for depot_tools projects)
-        # uses: actions/checkout@v4
-        # with:
-        #   repository: google/angle # Or https://chromium.googlesource.com/angle/angle.git
-        #   path: angle
-        #   fetch-depth: 1 # Fetch only the latest commit
-
-      # 5. Fetch ANGLE Dependencies (If using actions/checkout, otherwise gclient sync handles this)
-      # This step might be needed if you didn't use `gclient sync` in the previous step
-      # - name: Fetch ANGLE Dependencies (if needed)
-      #   working-directory: angle # Adjust path if needed
-      #   run: |
-      #     python3 scripts/bootstrap.py
-      #     gclient sync --no-history -j$(nproc)
-
-      # 6. Configure ANGLE Build (GN) - Android ARM64
-      - name: Configure ANGLE Build (GN) - Android ARM64
-        # ANGLE source is now in angle_build_dir/angle/
+      # 5. Configure ANGLE Build (GN) - Android ARM64 API 34
+      - name: Configure ANGLE Build (GN) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         working-directory: angle_build_dir/angle
         run: |
-          # Ensure ANDROID_NDK_ROOT is available in the shell environment for gn
           echo "Using ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}"
-          # Generate build files using gn
-          # Pass ANDROID_NDK_ROOT directly to gn args
-          # Note: path separators in args should be forward slashes
-          gn gen out/Android_ARM64 --args="target_os=\"android\" target_cpu=\"arm64\" android_ndk_root=\"${ANDROID_NDK_ROOT}\" is_debug=false is_component_build=false angle_enable_essl=true angle_enable_gl=false angle_enable_gl_desktop=false angle_enable_gles1=false angle_enable_vulkan=true angle_enable_d3d9=false angle_enable_d3d11=false angle_enable_metal=false angle_build_tests=false use_goma=false is_clang=true use_custom_libcxx=false"
+          echo "Targeting Android API Level: ${{ env.TARGET_ANDROID_API_LEVEL }}"
+          # Add android_ndk_api_level to gn args - Directly use environment variable to avoid trailing spaces
+          # Explicitly request building with Android SDK: build_with_android_sdk=true
+          gn gen out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }} --args="target_os=\"android\" target_cpu=\"arm64\" android_ndk_root=\"${ANDROID_NDK_ROOT}\" android_ndk_api_level=$TARGET_ANDROID_API_LEVEL is_debug=false is_component_build=false angle_enable_essl=true angle_enable_gl=false angle_enable_gl_desktop=false angle_enable_gles1=false angle_enable_vulkan=true angle_enable_d3d9=false angle_enable_d3d11=false angle_enable_metal=false angle_build_tests=false use_goma=false is_clang=true use_custom_libcxx=false build_with_android_sdk=true"
 
-      # 7. Build ANGLE (Ninja) - Android ARM64
-      - name: Build ANGLE (Ninja) - Android ARM64
+      # 6. Build ANGLE (Ninja) - Android ARM64
+      - name: Build ANGLE (Ninja) - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         working-directory: angle_build_dir/angle
         run: |
-          # Build the shared library target
-          # Common targets are 'angle_shared_library' or 'libangle' or 'angle_lib'
-          # Let's try 'angle_shared_library' which often produces libangle.so directly
-          # If this fails, try 'libangle' or investigate ANGLE's build targets more closely.
-          ninja -C out/Android_ARM64 angle_shared_library -j$(nproc)
+          ninja -C out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }} angle_shared_library -j$(nproc)
 
-      # 8. Verify Build Output
-      - name: List Build Output
-        run: ls -l angle_build_dir/angle/out/Android_ARM64/*angle*.*so*
+      # 7. Verify Build Output
+      - name: Verify Build Output
+        run: ls -l angle_build_dir/angle/out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }}/*angle*.*so*
 
-      # 9. Upload Build Artifacts - Android ARM64
-      - name: Upload Build Artifacts - Android ARM64
+      # 8. Upload Build Artifacts - Android ARM64
+      - name: Upload Build Artifacts - Android ARM64 API ${{ env.TARGET_ANDROID_API_LEVEL }}
         uses: actions/upload-artifact@v4
         with:
-          name: angle-android-arm64-release-build
-          # Adjust the path based on the actual output of the ninja build
-          # It's likely libangle.so or similar within the output directory
-          path: angle_build_dir/angle/out/Android_ARM64/libangle.so
+          name: angle-android-arm64-api${{ env.TARGET_ANDROID_API_LEVEL }}-release-build
+          path: angle_build_dir/angle/out/Android_ARM64_API${{ env.TARGET_ANDROID_API_LEVEL }}/libangle.so
           if-no-files-found: error # Fail the workflow if the library wasn't built
